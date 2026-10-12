@@ -1,0 +1,34 @@
+name: Go
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build against Whalabs/whatsmeow
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+
+    # Upstream imports polymorfa/hypermeow; this fork must never pull it back in,
+    # or apime ends up with two incompatible *whatsmeow.Client types.
+    - name: Guard against hypermeow imports
+      run: |
+        if grep -rn "polymorfa/hypermeow" --include='*.go' --include='go.mod' .; then
+          echo "::error::hypermeow import found, rewrite it to go.mau.fi/whatsmeow"
+          exit 1
+        fi
+
+    - name: Build
+      run: go build ./...
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Test
+      run: go test ./...

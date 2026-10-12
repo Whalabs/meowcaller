@@ -1,0 +1,74 @@
+name: Sync Upstream & Notify
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/purpshell/meowcaller.git
+          git fetch upstream
+
+      - name: Detect upstream changes
+        id: check
+        run: |
+          COMMITS_AHEAD=$(git rev-list --count main..upstream/main)
+          if [ "$COMMITS_AHEAD" -gt 0 ]; then
+            echo "changed=true" >> $GITHUB_OUTPUT
+          else
+            echo "changed=false" >> $GITHUB_OUTPUT
+          fi
+          echo "commits=$COMMITS_AHEAD" >> $GITHUB_OUTPUT
+          echo "Commits à frente do upstream: $COMMITS_AHEAD"
+
+      # Every sync has to redo the import rewrite; a hypermeow bump in upstream
+      # go.mod hints the new code may rely on API that only exists in that fork.
+      - name: Get upstream changes info
+        if: steps.check.outputs.changed == 'true'
+        id: changes
+        run: |
+          LAST_COMMIT=$(git log -1 --format="%h - %s" upstream/main)
+          echo "last_commit=$LAST_COMMIT" >> $GITHUB_OUTPUT
+          if git diff main upstream/main -- go.mod | grep -q "^[+-].*polymorfa/hypermeow "; then
+            echo "hypermeow_bump=sim, conferir API usada antes do sync" >> $GITHUB_OUTPUT
+          else
+            echo "hypermeow_bump=não" >> $GITHUB_OUTPUT
+          fi
+          git log --oneline main..upstream/main | head -10
+
+      - name: Notify Telegram
+        if: steps.check.outputs.changed == 'true'
+        uses: appleboy/telegram-action@v1.0.0
+        with:
+          to: ${{ secrets.TELEGRAM_CHAT_ID }}
+          thread_id: 5
+          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          format: markdown
+          message: |
+            🔄 *Atualização detectada no upstream!*
+
+            Repositório: *${{ github.repository }}*
+
+            📊 *Estatísticas:*
+            • Commits à frente: *${{ steps.check.outputs.commits }}*
+            • Último commit: `${{ steps.changes.outputs.last_commit }}`
+            • Versão do hypermeow mudou: *${{ steps.changes.outputs.hypermeow_bump }}*
+
+            ⚠️ *Ação necessária:*
+            Merge do upstream, trocar `github.com/polymorfa/hypermeow` por `go.mau.fi/whatsmeow` nos arquivos novos, rodar `go build ./... && go test ./...` e depois atualizar a apime.
+
+            🔗 [Ver comparação](https://github.com/${{ github.repository }}/compare/main...purpshell:meowcaller:main)
