@@ -677,6 +677,7 @@ func (e *engine) runMedia(ctx context.Context, callID string, call *Call, callKe
 	if m := e.calls[callID]; m != nil {
 		vsender.active = m.localVideo
 		vsender.sendGated = m.videoGate
+		vsender.rotation = m.localRotation
 		m.videoTx = vsender
 		m.appDataTx = appSender
 	}
@@ -1289,7 +1290,10 @@ type videoSender struct {
 	active           bool
 	sendGated        bool
 	keyframeRequired bool
-	log              zerolog.Logger
+	// rotation is the CVO receiver rotation (clockwise quarter turns) stamped on every
+	// outbound frame; receivers render by it, not by the signaled device orientation.
+	rotation uint8
+	log      zerolog.Logger
 	diag             *diag.Recorder
 }
 
@@ -1447,6 +1451,7 @@ func (vs *videoSender) protectAccessUnitLocked(au []byte, duration time.Duration
 	if idr {
 		mediaFrameInfo = rtp.VideoMediaFrameInfoIDR
 	}
+	mediaFrameInfo |= vs.rotation & 0x03
 	packets := make([][]byte, 0, len(payloads))
 	for i, payload := range payloads {
 		header := vs.stream.NextPacket(i == len(payloads)-1, mediaFrameInfo)

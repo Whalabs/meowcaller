@@ -60,6 +60,7 @@ type engineCall struct {
 	videoGate         bool         // outbound upgrade is waiting for peer acceptance
 	peerVideoUpgrade  bool         // the peer's inbound upgrade is waiting for local acceptance
 	videoTx           *videoSender // video send pipeline, live while media runs
+	localRotation     uint8        // CVO rotation for outbound video, kept across sender restarts
 	appDataTx         *appDataSender
 	rekeyPeer         func(string) error
 	group             bool
@@ -393,6 +394,14 @@ func (e *engine) setVideoOrientation(callID string, orientation int) error {
 		return errors.New("meowcaller: call has no active video media")
 	}
 	to, creator := m.from, m.creator
+	// The signaled value is the device orientation; frames carry the receiver rotation,
+	// its opposite (captured: an iPhone signaling 1 stamps 3 on its RTP).
+	m.localRotation = uint8((4 - orientation) % 4)
+	if vs := m.videoTx; vs != nil {
+		vs.mu.Lock()
+		vs.rotation = m.localRotation
+		vs.mu.Unlock()
+	}
 	e.mu.Unlock()
 	node := signaling.BuildVideoStateWithParams(signaling.VideoStateParams{
 		CallID: callID, To: to, CallCreator: creator, WrapperID: e.nextCallNodeID(),
